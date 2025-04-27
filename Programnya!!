@@ -1,0 +1,116 @@
+#define BLYNK_TEMPLATE_ID "***"
+#define BLYNK_TEMPLATE_NAME "**"
+#define BLYNK_AUTH_TOKEN "****"
+
+#include <ESP8266WiFi.h>
+#include <BlynkSimpleEsp8266.h>
+#include <Servo.h>
+
+// Informasi WiFi dan Blynk
+#define BLYNK_PRINT Serial
+
+char auth[] = BLYNK_AUTH_TOKEN;
+char ssid[] = "****";
+char pass[] = "**";
+
+Servo myServo;
+
+// Pin Ultrasonik dan Servo
+const int trigPin = D5;
+const int echoPin = D6;
+const int servoPin = D4;
+
+// Virtual Pin untuk kontrol manual
+const int manualButton = V0;
+
+// Variabel logika
+bool isFoodEmpty = false;
+bool shouldTurnOnServo = false;
+
+// Timer
+unsigned long previousMillis = 0;
+const unsigned long interval = 15000; // 15 detik
+
+void setup() {
+  Serial.begin(115200);
+  Blynk.begin(auth, ssid, pass);
+
+  myServo.attach(servoPin);
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+}
+
+void loop() {
+  Blynk.run();
+  checkFoodBowl();
+
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis >= interval) {
+    previousMillis = currentMillis;
+
+    Serial.println(">> Interval 15 detik tercapai, cek mangkuk...");
+    shouldTurnOnServo = true;
+
+    if (isFoodEmpty) {
+      openServo();
+      shouldTurnOnServo = false;
+    }
+  }
+}
+
+// Fungsi untuk menggerakkan servo selama 3 detik
+void openServo() {
+  Serial.println(">> SERVO AKTIF! Makanan disiapkan.");
+  myServo.write(145);   // Buka ke 145 derajat
+  delay(3000);          // Tunggu 3 detik
+  myServo.write(0);     // Kembali ke posisi semula
+
+  Blynk.logEvent("makanan_siap", "Servo Terbuka ");
+}
+
+// Fungsi untuk mengecek isi mangkuk menggunakan sensor ultrasonik
+void checkFoodBowl() {
+  long duration;
+  int distance;
+
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  duration = pulseIn(echoPin, HIGH);
+  distance = duration * 0.034 / 2;
+
+  Serial.print(">> Jarak sensor: ");
+  Serial.print(distance);
+  Serial.println(" cm");
+
+  bool previousState = isFoodEmpty;
+  isFoodEmpty = (distance > 6); // True jika mangkuk kosong (lebih dari 6 cm)
+
+  if (isFoodEmpty) {
+    Serial.println(">> Mangkuk KOSONG!");
+    if (shouldTurnOnServo) {
+      openServo();
+      shouldTurnOnServo = false;
+    }
+  } else {
+    Serial.println(">> Mangkuk ADA ISI.");
+  }
+
+  delay(3000); // Delay ini bisa diubah sesuai kebutuhan
+}
+
+// Fungsi untuk kontrol manual dari Blynk
+BLYNK_WRITE(V0) {
+  int value = param.asInt();
+  Serial.print(">> Tombol Blynk ditekan: ");
+  Serial.println(value);
+
+  if (value == 1) {
+    Serial.println(">> Tombol ditekan, SERVO dibuka secara manual!");
+    openServo(); // Langsung buka servo tanpa cek kondisi mangkuk
+    shouldTurnOnServo = false;
+  }
+}
